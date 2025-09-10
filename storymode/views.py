@@ -1,30 +1,22 @@
 import json
-import requests
 from openai import AzureOpenAI
 from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
 from django.http import JsonResponse
 from azure.storage.blob import BlobServiceClient
 from storymode.models import Story, StorymodeMoment, StorymodeChoice
+from storymode.serializers import StorySerializer
+from storymode.mixins import AuthMixin, UpadteMixin, UpdataAllMixin
+
 
 AZURE_BLOB_STORAGE_CONNECT_KEY = settings.AZURE_BLOB_STORAGE_CONNECT_KEY
 AZURE_OPENAI_API_KEY = settings.AZURE_OPENAI_API_KEY
 AZURE_OPENAI_ENDPOINT = settings.AZURE_OPENAI_ENDPOINT
 AZURE_OPENAI_VERSION = settings.AZURE_OPENAI_VERSION
 AZURE_OPENAI_DEPLOYMENT = settings.AZURE_OPENAI_DEPLOYMENT
-
-"""
-전달되는 파일을 Azure Blob Storage 에 업로드
-"""
-class StoryFileUploadView(APIView) :
-    # 인증된 사용자만 접근 가능
-    permission_classes = [IsAuthenticated]
-    # JWT 인증 방식 사용
-    authentication_classes = [JWTAuthentication]
-
+    
+# 전달되는 파일을 Azure Blob Storage 에 업로드
+class StoryFileUploadView(AuthMixin) :
     def post(self, request) :
         file = request.FILES.get('file')
 
@@ -53,20 +45,11 @@ class StoryFileUploadView(APIView) :
                 'message' : '파일 업로드 실패'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)   
 
-
-"""
-Azure Blob Storage 에 업로드된 파일을 읽어서 DB 에 데이터 저장
-"""
-class StoryCreateView(APIView) :
-    # 인증된 사용자만 접근 가능
-    permission_classes = [IsAuthenticated]
-    # JWT 인증 방식 사용
-    authentication_classes = [JWTAuthentication]
-
+# Azure Blob Storage 에 업로드된 파일을 읽어서 DB 에 데이터 저장
+class StoryCreateView(AuthMixin) :
     def post(self, request) :
         story_name = request.data.get('story_name')
         blob_name = request.data.get('blob_name')
-        print('blob_name : ', blob_name)
 
         if not story_name or not blob_name :
             return JsonResponse({
@@ -218,7 +201,7 @@ class StoryCreateView(APIView) :
                 return JsonResponse({
                     'message' : '인터랙티브 스토리 생성 및 저장 성공',
                     'story_id' : str(story_instance.id),
-                    'data' : {story_json}
+                    'data' : story_json
                 }, status=status.HTTP_201_CREATED)
             except Exception as e :
                 print(f"🛑 오류: AI 응답 데이터를 DB에 저장하는 데 실패했습니다. 오류: {e}")
@@ -233,19 +216,12 @@ class StoryCreateView(APIView) :
                 'message' : 'AI 처리 중 오류 발생',
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-"""
-DB 에 저장된 스토리 정보 조회
-"""
-class StoryListView(APIView) :
-    # 인증된 사용자만 접근 가능
-    permission_classes = [IsAuthenticated]
-    # JWT 인증 방식 사용
-    authentication_classes = [JWTAuthentication]
-
+# 스토리 DB 조회
+class StoryListView(AuthMixin) :
     def get(self, request) :
         try :
-            stories = Story.objects.all().prefetch_related('moments__choices')
+            stories = Story.objects.filter(is_display=True, is_deleted=False).prefetch_related('moments__choices')
+            # stories = Story.objects.all().prefetch_related('moments__choices')
 
             story_list_data = []
             for story in stories :
@@ -290,3 +266,13 @@ class StoryListView(APIView) :
             return JsonResponse({
                 'message' : '스토리 목록 조회 실패'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# 스토리 DB 업데이트
+class StoryUpdateView(AuthMixin, UpadteMixin) :
+    def put(self, request, story_id) :
+        return super().put(request, 'story_id', Story, StorySerializer, story_id)
+
+# 스토리 DB 전체 업데이트
+class StoryUpdateAllView(AuthMixin, UpdataAllMixin) :
+    def put(self, request) :
+        return super().put(request, Story)
