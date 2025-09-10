@@ -55,11 +55,42 @@ class Genre(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)    # 판타지, 미스터리, 사이버펑크
     is_display = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         managed = False 
         db_table = 'genre'
+
+    def __str__(self):
+        return self.name
+    
+# 난이도
+class Difficulty(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True)     # 초급, 중급, 상급
+    is_display = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = False 
+        db_table = 'difficulty'
+
+    def __str__(self):
+        return self.name
+
+# 모드
+class Mode(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True)     # 동시 선택, 턴제
+    is_display = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = False 
+        db_table = 'mode'
 
     def __str__(self):
         return self.name
@@ -70,6 +101,7 @@ class Scenario(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     is_display = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -88,6 +120,8 @@ class Character(models.Model):
     items = models.JSONField(default=dict)
     ability = models.JSONField(default=dict)
     image_path = models.CharField(max_length=500, null=True, blank=True)
+    is_display = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
 
     class Meta:
         managed = False 
@@ -112,34 +146,6 @@ class GameRoomSelectScenario(models.Model):
 
     def __str__(self):
         return f"Room {self.gameroom.name} selected {self.scenario.title}"
-
-# 난이도
-class Difficulty(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=50, unique=True)     # 초급, 중급, 고급
-    is_display = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        managed = False 
-        db_table = 'difficulty'
-
-    def __str__(self):
-        return self.name
-
-# 모드
-class Mode(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=50, unique=True)     # 동시선택, 턴제
-    is_display = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        managed = False 
-        db_table = 'mode'
-
-    def __str__(self):
-        return self.name
 
 # 세션 모델
 class BaseSession(models.Model):
