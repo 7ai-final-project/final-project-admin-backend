@@ -5,4 +5,4 @@ from storymode.models import Story
 class StorySerializer(serializers.ModelSerializer) :
     class Meta :
         model = Story
-        fields = ['id', 'title', 'description', 'start_moment', 'is_display', 'is_deleted']
+        fields = ['id', 'title', 'title_eng', 'description', 'description_eng', 'start_moment', 'is_display', 'is_deleted']

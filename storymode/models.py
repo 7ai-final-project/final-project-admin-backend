@@ -7,7 +7,9 @@ from user.models import User
 class Story(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200)
+    title_eng = models.CharField(max_length=200, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    description_eng = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Django 모델에서 ForeignKey나 OneToOneField, ManyToManyField 등을 정의할 때, 참조하려는 모델 클래스가 아직 정의되지 않았을 경우(즉, 현재 파일의 아래쪽에 정의될 경우)에는 문자열로 모델 이름을 지정
     start_moment = models.ForeignKey('StorymodeMoment', on_delete=models.SET_NULL, null=True, blank=True, related_name='start_of_stories')
@@ -26,7 +28,9 @@ class StorymodeMoment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     story = models.ForeignKey(Story, on_delete=models.CASCADE, related_name='moments')
     title = models.CharField(max_length=100)
+    title_eng = models.CharField(max_length=100, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    description_eng = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     image_path = models.CharField(max_length=500, null=True, blank=True)
 

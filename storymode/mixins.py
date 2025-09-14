@@ -60,7 +60,7 @@ class ListViewMixin :
                 'message': f'{model.__name__} 목록 조회 실패: {e}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class UpadteMixin :
+class UpdateMixin :
     def put(self, request, pk_name, model, serializer_class, instance_id):
         instance = get_object_or_404(model, pk=instance_id)
         updated_any_field = False
@@ -96,7 +96,7 @@ class UpadteMixin :
             'data': serializer.data
         }, status=status.HTTP_200_OK)
 
-class UpdataAllMixin :
+class UpdateAllMixin :
     def put(self, request, model) :
         update_fields = {}
 
