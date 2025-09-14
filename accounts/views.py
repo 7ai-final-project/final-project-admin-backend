@@ -15,8 +15,6 @@ class LoginView(APIView) :
     def post(self, request) :
         name = request.data.get('name')
         password = request.data.get('password')
-        print(f'name : {name}')
-        print(f'password : {password}')
 
         if not name or not password :
             return JsonResponse({

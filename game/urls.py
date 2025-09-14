@@ -19,8 +19,8 @@ urlpatterns = [
 
     path('create/difficulties', DifficultyCreateView.as_view(), name="create_difficulties"),
     path('list/difficulties', DifficultyListView.as_view(), name="list_difficulties"),
-    path('update/difficulties/all', DifficultyUpdateView.as_view(), name="update_all_difficulties"),
-    path('update/difficulties/<str:difficulty_id>', DifficultyUpdateAllView.as_view(), name="update_difficulties"),
+    path('update/difficulties/all', DifficultyUpdateAllView.as_view(), name="update_all_difficulties"),
+    path('update/difficulties/<str:difficulty_id>', DifficultyUpdateView.as_view(), name="update_difficulties"),
 
     path('list/scenarios', ScenarioListView.as_view(), name="list_scenarios"),
     path('upload/scenarios', SenarioFileUploadView.as_view(), name="upload_scenarios"),
@@ -30,6 +30,7 @@ urlpatterns = [
 
     path('list/characters/<str:scenario_id>', CharacterListView.as_view(), name="list_characters"),
     path('create/characters/all/', CharacterCreateView.as_view(), name="create_characters"),
+    # path('create/characters/images/<str:character_id>', MomentImageCreateView.as_view(), name="create_story_image"),
     # path('update/stories/', StoryUpdateView.as_view(), name="update_story"),
     # path('update/stories/all', StoryUpdateAllView.as_view(), name="update_story_all"),
     # path('create/stories/images', StoryImageCreateView.as_view(), name="create_story_image"),
