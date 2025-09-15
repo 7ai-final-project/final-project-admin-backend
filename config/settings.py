@@ -109,9 +109,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 REST_USE_JWT = True
 SIMPLE_JWT = {
     # access 토큰 유효시간
-    'ACCESS_TOKEN_LIFETIME' : timedelta(minutes=15),
+    'ACCESS_TOKEN_LIFETIME' : timedelta(hours=1),
     # refresh 토큰 유효시간 timedelta
-    'REFRESH_TOKEN_LIFETIME' : timedelta(minutes=15),    
+    'REFRESH_TOKEN_LIFETIME' : timedelta(hours=24),
     # refresh 토큰 갱신 시, 새 토큰 생성
     'ROTATE_REFRESH_TOKENS' : False,
     # 토큰 생성 후, 이전 토큰 블랙리스트에 추가

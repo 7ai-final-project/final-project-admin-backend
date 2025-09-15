@@ -3,7 +3,7 @@ from game.views import (GenreCreateView, GenreListView, GenreUpdateAllView, Genr
                         ModeCreateView, ModeListView, ModeUpdateView, ModeUpdateAllView, 
                         DifficultyCreateView, DifficultyListView, DifficultyUpdateView, DifficultyUpdateAllView, 
                         SenarioFileUploadView, ScenarioListView, SenarioCreateView, ScenarioUpdateAllView, ScenarioUpdateView,
-                        CharacterListView, CharacterCreateView
+                        CharacterListView, CharacterCreateView, CharacterImageCreateView
                         )
 
 urlpatterns = [
@@ -30,8 +30,5 @@ urlpatterns = [
 
     path('list/characters/<str:scenario_id>', CharacterListView.as_view(), name="list_characters"),
     path('create/characters/all/', CharacterCreateView.as_view(), name="create_characters"),
-    # path('create/characters/images/<str:character_id>', MomentImageCreateView.as_view(), name="create_story_image"),
-    # path('update/stories/', StoryUpdateView.as_view(), name="update_story"),
-    # path('update/stories/all', StoryUpdateAllView.as_view(), name="update_story_all"),
-    # path('create/stories/images', StoryImageCreateView.as_view(), name="create_story_image"),
+    path('create/characters/images/<str:character_id>', CharacterImageCreateView.as_view(), name="create_character_image"),
 ]
