@@ -515,19 +515,13 @@ class MomentImageCreateView(BaseImageView) :
 
         container_name = story_title.lower().replace(' ', '-')
         blob_name = f'{moment_title}.png'
-        print('container_name', container_name)
-        print('blob_name', blob_name)
 
         try :
             blob_util = AzureBlobStorageUtil(AppSettings.AZURE_BLOB_STORAGE_CONNECT_KEY_FOR_IMAGE)
             container_client = blob_util.get_or_create_container(container_name, public=True)
             blob_client = container_client.get_blob_client(blob=blob_name)
-            print('blob_util', blob_util)
-            print('container_client', container_client)
-            print('blob_client', blob_client)
             
             existing_image_url = blob_util.check_blob_exists_and_get_url(blob_client)
-            print('existing_image_url', existing_image_url)
             if existing_image_url:
                 self._update_moment_image_path(moment_id, existing_image_url)
                 return JsonResponse({

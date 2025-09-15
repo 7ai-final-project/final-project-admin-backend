@@ -376,18 +376,35 @@ class CharacterCreateView(AuthMixin) :
         user = {
             "role": "user",
             "content": f"""다음 시나리오 정보를 바탕으로 캐릭터 설명
-                            형식(JSON): {
-                                {
-                                    "name": "캐릭터 이름",
-                                    "name_eng": "캐릭터 영어 이름",
-                                    "role": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)",
-                                    "role_eng": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)를 영어로 번역",
-                                    "stats": {"힘":1-10,"민첩":1-10,"지식":1-10,"의지":1-10,"매력":1-10,"운":1-10},
-                                    "skills": ["대표 스킬1","대표 스킬2"],
-                                    "starting_items": ["시작 아이템1","시작 아이템2"],
-                                    "playstyle": "행동/대화 성향, 선택 경향, 말투 가이드"
-                                }
-                            }
+                            형식(JSON): {{
+                                "name": "캐릭터 이름",
+                                "name_eng": "캐릭터 영어 이름",
+                                "role": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)",
+                                "role_eng": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)를 영어로 번역",
+                                "playstyle": "행동/대화 성향, 선택 경향, 말투 가이드",
+                                "playstyle_eng": "행동/대화 성향, 선택 경향, 말투 가이드를 영어로 번역",
+                                "stats": {{"힘":1-10,"민첩":1-10,"지식":1-10,"의지":1-10,"매력":1-10,"운":1-10}},
+                                "skills": [
+                                    {{
+                                        "name":"대표 스킬1",
+                                        "description":"스킬1 설명",
+                                    }},
+                                    {{
+                                        "name":"대표 스킬2",
+                                        "description":"스킬2 설명",
+                                    }}
+                                ],
+                                "starting_items": [
+                                    {{
+                                        "name":"시작 아이템1",
+                                        "description":"아이템1 설명",
+                                    }},
+                                    {{
+                                        "name":"시작 아이템2",
+                                        "description":"아이템2 설명",
+                                    }}
+                                ]
+                            }}
                             시나리오: {scenario.description}
                         """
         }
@@ -419,14 +436,15 @@ class CharacterCreateView(AuthMixin) :
         # AI 응답 데이터 DB 저장
         try :
             # 캐릭터 DB 저장
-            character_role = character_json.get('role', '')
-            character_playstyle = character_json.get('playstyle', '')
-
             character, created = Character.objects.get_or_create(
                 scenario=scenario,
                 name=character_json.get('name', ''),
+                name_eng=character_json.get('name_eng', ''),
+                role=character_json.get('role', ''),
+                role_eng=character_json.get('role_eng', ''),
+                description=character_json.get('playstyle', ''),
+                description_eng=character_json.get('playstyle_eng', ''),
                 defaults={
-                    'description': f"역할: {character_role}\n플레이 스타일: {character_playstyle}",
                     'items': list(character_json.get('starting_items', [])),
                     'ability': {
                         'stats': character_json.get('stats', {}),
@@ -449,7 +467,7 @@ class CharacterCreateView(AuthMixin) :
             return JsonResponse({
                 'message' : message,
                 'characters' : [serializer.data]
-            }, status=status.status_code)
+            }, status=status_code)
         except Exception as e :
             print(f"🛑 오류: AI 응답 데이터를 DB에 저장하는 데 실패했습니다. 오류: {e}")
             return JsonResponse({

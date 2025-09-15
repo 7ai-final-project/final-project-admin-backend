@@ -100,10 +100,13 @@ class Mode(models.Model):
 class Scenario(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
+    title_eng = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    description_eng = models.TextField(null=True, blank=True)
     is_display = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    image_path = models.CharField(max_length=500, null=True, blank=True)
 
     class Meta:
         managed = False 
@@ -117,7 +120,11 @@ class Character(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     scenario = models.ForeignKey(Scenario, on_delete=models.CASCADE, related_name='character')
     name = models.CharField(max_length=100)
+    name_eng = models.CharField(max_length=100, null=True, blank=True)
+    role = models.CharField(max_length=255, null=True, blank=True)
+    role_eng = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    description_eng = models.TextField(null=True, blank=True)
     items = models.JSONField(default=dict)
     ability = models.JSONField(default=dict)
     image_path = models.CharField(max_length=500, null=True, blank=True)
@@ -163,7 +170,7 @@ class BaseSession(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='play')    # play, finish
 
     class Meta:
-        managed = False 
+        managed = False
         abstract = True
 
 # 싱글모드 세션

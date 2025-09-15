@@ -15,6 +15,7 @@ class Story(models.Model):
     start_moment = models.ForeignKey('StorymodeMoment', on_delete=models.SET_NULL, null=True, blank=True, related_name='start_of_stories')
     is_display = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
+    image_path = models.CharField(max_length=500, null=True, blank=True)
 
     class Meta:
         managed = False 
@@ -28,7 +29,6 @@ class StorymodeMoment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     story = models.ForeignKey(Story, on_delete=models.CASCADE, related_name='moments')
     title = models.CharField(max_length=100)
-    title_eng = models.CharField(max_length=100, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     description_eng = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
