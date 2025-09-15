@@ -20,9 +20,9 @@ class DifficultySerializer(serializers.ModelSerializer) :
 class ScenarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Scenario
-        fields = ['id', 'title', 'description', 'is_display', 'is_deleted']
+        fields = ['id', 'title', 'title_eng', 'description', 'description_eng', 'image_path', 'is_display', 'is_deleted']
 
 class CharacterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Character
-        fields = ['id', 'name', 'description', 'items', 'ability', 'image_path', 'is_display', 'is_deleted']
+        fields = ['id', 'name', 'name_eng', 'role', 'role_eng', 'description', 'description_eng', 'items', 'ability', 'image_path', 'is_display', 'is_deleted']

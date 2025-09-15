@@ -258,7 +258,7 @@ class SenarioCreateView(AuthMixin) :
                             "setting": "시대/장소/분위기",
                             "themes": ["주제1","주제2"],
                             "tone": "전체 톤",
-                            "notable_characters": ["핵심 인물/집단 3~6개"],
+                            "notable_characters": ["핵심 인물/집단 2~6개"],
                             "conflicts": ["갈등/과제 2~4개"],
                             "description": "한줄 요약",
                             "description_eng": "한줄 요약을 영어로 번역"
@@ -296,7 +296,9 @@ class SenarioCreateView(AuthMixin) :
             # Scenario DB 저장
             scenario, created = Scenario.objects.get_or_create(
                 title=scenario_name,
-                defaults={'description': senario_json.get('description','')}
+                title_eng=senario_json.get('title_eng',''),
+                description=senario_json.get('description',''),
+                description_eng=senario_json.get('description_eng',''),
             )
 
             serializer = ScenarioSerializer(scenario)
@@ -370,24 +372,41 @@ class CharacterCreateView(AuthMixin) :
         # 3. AI 시스템 메시지 및 Azure OpenAI 요청
         system = {
             "role": "system",
-            "content": "너는 창의적인 캐릭터 창작가다. 캐릭터 창작에 도움이 되는 핵심만 간결히 요약해라.",
+            "content": "너는 창의적인 스토리 작가이자 캐릭터 창조자다. 주어진 시나리오를 바탕으로 3~5명의 핵심 플레이어블 캐릭터들을 생성한다. 반드시 지정된 JSON 형식에 맞춰 응답해야 한다.",
         }
         
         user = {
             "role": "user",
-            "content": f"""다음 시나리오 정보를 바탕으로 캐릭터 설명
-                            형식(JSON): {
-                                {
-                                    "name": "캐릭터 이름",
-                                    "name_eng": "캐릭터 영어 이름",
-                                    "role": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)",
-                                    "role_eng": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)를 영어로 번역",
-                                    "stats": {"힘":1-10,"민첩":1-10,"지식":1-10,"의지":1-10,"매력":1-10,"운":1-10},
-                                    "skills": ["대표 스킬1","대표 스킬2"],
-                                    "starting_items": ["시작 아이템1","시작 아이템2"],
-                                    "playstyle": "행동/대화 성향, 선택 경향, 말투 가이드"
-                                }
-                            }
+            "content": f"""다음 시나리오 정보를 바탕으로 3~5명의 플레이어블 캐릭터 목록을 생성해줘. 응답 형식은 반드시 'characters'라는 키를 가진 JSON 객체여야 하며, 그 값은 캐릭터 객체들의 배열(리스트)이어야 한다.
+                            형식(JSON): {{
+                                "name": "캐릭터 이름",
+                                "name_eng": "캐릭터 영어 이름",
+                                "role": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)",
+                                "role_eng": "클래스/아키타입(탱커/정찰자/현자/외교가/트릭스터 등)를 영어로 번역",
+                                "playstyle": "행동/대화 성향, 선택 경향, 말투 가이드",
+                                "playstyle_eng": "행동/대화 성향, 선택 경향, 말투 가이드를 영어로 번역",
+                                "stats": {{"힘":1-10,"민첩":1-10,"지식":1-10,"의지":1-10,"매력":1-10,"운":1-10}},
+                                "skills": [
+                                    {{
+                                        "name":"대표 스킬1",
+                                        "description":"스킬1 설명",
+                                    }},
+                                    {{
+                                        "name":"대표 스킬2",
+                                        "description":"스킬2 설명",
+                                    }}
+                                ],
+                                "starting_items": [
+                                    {{
+                                        "name":"시작 아이템1",
+                                        "description":"아이템1 설명",
+                                    }},
+                                    {{
+                                        "name":"시작 아이템2",
+                                        "description":"아이템2 설명",
+                                    }}
+                                ]
+                            }}
                             시나리오: {scenario.description}
                         """
         }
@@ -408,8 +427,14 @@ class CharacterCreateView(AuthMixin) :
             ai_response_content = response.choices[0].message.content
             print("AI가 응답을 완료했습니다!")
 
-            character_json = json.loads(ai_response_content)
-            print(character_json)
+            characters_json = json.loads(ai_response_content)
+            print(characters_json)
+
+            characters_data = characters_json.get('characters', [])
+            if not characters_data : 
+                return JsonResponse({
+                    'message': f'AI 가 캐릭터 데이터를 생성하지 못했습니다.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e :
             print(f"🛑 오류: AI를 호출하는 중에 오류가 발생했습니다: {e}")
             return JsonResponse({
@@ -419,23 +444,27 @@ class CharacterCreateView(AuthMixin) :
         # AI 응답 데이터 DB 저장
         try :
             # 캐릭터 DB 저장
-            character_role = character_json.get('role', '')
-            character_playstyle = character_json.get('playstyle', '')
-
-            character, created = Character.objects.get_or_create(
-                scenario=scenario,
-                name=character_json.get('name', ''),
-                defaults={
-                    'description': f"역할: {character_role}\n플레이 스타일: {character_playstyle}",
-                    'items': list(character_json.get('starting_items', [])),
-                    'ability': {
-                        'stats': character_json.get('stats', {}),
-                        'skills': character_json.get('skills', []),
+            created_characters = []
+            for characters in characters_data:
+                character, created = Character.objects.get_or_create(
+                    scenario=scenario,
+                    name=characters.get('name', ''),
+                    name_eng=characters.get('name_eng', ''),
+                    role=characters.get('role', ''),
+                    role_eng=characters.get('role_eng', ''),
+                    description=characters.get('playstyle', ''),
+                    description_eng=characters.get('playstyle_eng', ''),
+                    defaults={
+                        'items': list(characters.get('starting_items', [])),
+                        'ability': {
+                            'stats': characters.get('stats', {}),
+                            'skills': characters.get('skills', []),
+                        }
                     }
-                }
-            )
+                )
+                created_characters.append(character)
 
-            serializer = CharacterSerializer(character)
+            serializer = CharacterSerializer(created_characters, many=True)
 
             if created :
                 message = '캐릭터가 성공적으로 저장되었습니다.'
@@ -449,12 +478,12 @@ class CharacterCreateView(AuthMixin) :
             return JsonResponse({
                 'message' : message,
                 'characters' : [serializer.data]
-            }, status=status.status_code)
+            }, status=status_code)
         except Exception as e :
             print(f"🛑 오류: AI 응답 데이터를 DB에 저장하는 데 실패했습니다. 오류: {e}")
             return JsonResponse({
                 'message' : 'AI 응답 데이터 DB 저장 실패',
-                'ai_response' : character_json
+                'ai_response' : characters_data
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # 캐릭터 DB 조회
@@ -481,7 +510,6 @@ class CharacterListView(AuthMixin) :
 
 # 이미지 공통 로직 View
 class BaseImageView(AuthMixin) :
-    # CHARACTERS_INFO = "Haesik (a girl in traditional yellow and red Hanbok), Dalsik (her younger brother in white and gray Hanbok), and a large, slightly foolish Tiger. Or a woodcutter and a ghost from a well."
     STYLE_DESCRIPTION = "Simple and clean 8-bit pixel art, minimalist, retro video game asset, clear outlines, Korean fairy tale theme. No Japanese or Chinese elements."
 
     # 에러 응답
@@ -490,8 +518,8 @@ class BaseImageView(AuthMixin) :
             'message': message
         }, status=status_code)
 
-    # GPT 를 사용하여 DALL-E 프롬프트 생성
-    def _generate_gpt_prompt(self, moment_description, character_id=None) :
+    # GPT 를 사용하여 캐릭터 정보 생성
+    def _generate_characters_info(self, character_name, character_role, character_description) :
         gpt_client = get_azure_openai_client(
             AppSettings.AZURE_OPENAI_API_KEY,
             AppSettings.AZURE_OPENAI_ENDPOINT,
@@ -501,15 +529,54 @@ class BaseImageView(AuthMixin) :
         if not gpt_client :
             raise Exception('AI 서비스 연결 실패: OpenAI 클라이언트 초기화 오류')
 
-        # - **Relevant Characters:** {self.CHARACTERS_INFO}
+        character_list_str = "\n".join([
+            f"- {character_name}: {character_role}, {character_description}"
+        ])
+        print(f">> 이미지 생성을 위한 캐릭터 정보:\n{character_list_str}")
+
+        summary_prompt = f"""
+        Please summarize the following list of characters into a single, concise descriptive sentence for an image generation prompt. Focus on their key roles and appearances.
+        Example output: "A brave warrior named Aragorn, a wise wizard Gandalf, and a small hobbit Frodo."
+
+        Character List:
+        {character_list_str}
+        """
+        
+        try :
+            response = gpt_client.chat.completions.create(
+                model=AppSettings.AZURE_OPENAI_DEPLOYMENT,
+                messages=[{"role": "user", "content": summary_prompt}],
+                temperature=0.5,
+                max_tokens=150
+            )
+            generated_character_info = response.choices[0].message.content.strip()
+            print(f">> AI가 생성한 동적 캐릭터 정보: {generated_character_info}\n")
+            return generated_character_info
+        except Exception as e:
+            print(f"🛑 오류: 동적 캐릭터 정보 생성 실패: {e}. 기본 정보를 사용합니다.")
+            return "A group of adventurers."
+        
+    # GPT 를 사용하여 DALL-E 프롬프트 생성
+    def _generate_gpt_prompt(self, character_info) :
+        gpt_client = get_azure_openai_client(
+            AppSettings.AZURE_OPENAI_API_KEY,
+            AppSettings.AZURE_OPENAI_ENDPOINT,
+            AppSettings.AZURE_OPENAI_VERSION
+        )
+        
+        if not gpt_client :
+            raise Exception('AI 서비스 연결 실패: OpenAI 클라이언트 초기화 오류')
+
         gpt_prompt = f"""
         You are an expert prompt writer for an 8-bit pixel art image generator. Your task is to convert a scene description into a single, visually detailed paragraph for the DALL-E model.
+        
         **Consistent Rules (Apply to all images):**
+        - **Relevant Characters:** {character_info}
         - **Art Style:** {self.STYLE_DESCRIPTION}
-        **Current Scene Description to Convert:**
-        - "{moment_description}"
+
         Combine all of this information into a single descriptive paragraph. Focus on visual details like character actions, expressions, and background elements. Do not use markdown or lists.
         """
+
         try :
             gpt_response = gpt_client.chat.completions.create(
                 model=AppSettings.AZURE_OPENAI_DEPLOYMENT,
@@ -521,7 +588,7 @@ class BaseImageView(AuthMixin) :
             print(f">> 생성된 DALL-E 프롬프트: {dalle_prompt}")
             return dalle_prompt
         except Exception as e :
-            raise Exception(f"GPT 프롬프트 생성 실패 (Moment ID: {character_id if character_id else 'N/A'}): {e}")
+            raise Exception(f"GPT 프롬프트 생성 실패: {e}")
     
     # DALL-E 3를 사용하여 이미지 생성
     def _generate_dalle_image(self, dalle_prompt, character_id=None) :
@@ -581,6 +648,7 @@ class CharacterImageCreateView(BaseImageView) :
     def put(self, request, character_id) :
         scenario_title = request.data.get('scenario_title')
         character_name = request.data.get('character_name')
+        character_role = request.data.get('character_role')
         character_description = request.data.get('character_description')
 
         if not character_id :
@@ -606,7 +674,8 @@ class CharacterImageCreateView(BaseImageView) :
                     'image_url': existing_image_url,
                 }, status=status.HTTP_200_OK)
             
-            dalle_prompt = self._generate_gpt_prompt(character_description, character_id)
+            generated_character_info = self._generate_characters_info(character_name, character_role, character_description)
+            dalle_prompt = self._generate_gpt_prompt(generated_character_info)
             temp_image_url = self._generate_dalle_image(dalle_prompt, character_id)
             final_image_url = self._upload_image_to_blob(blob_client, temp_image_url, character_id)
             self._update_character_image_path(character_id, final_image_url)
