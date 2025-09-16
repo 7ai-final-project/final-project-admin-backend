@@ -22,4 +22,5 @@ urlpatterns = [
     path('auth/', include('accounts.urls')),
     path('game/', include('game.urls')),
     path('storymode/', include('storymode.urls')),
+    path('api/', include('user.urls')),
 ]
