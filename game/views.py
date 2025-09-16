@@ -510,7 +510,7 @@ class CharacterListView(AuthMixin) :
 
 # 이미지 공통 로직 View
 class BaseImageView(AuthMixin) :
-    STYLE_DESCRIPTION = "Simple and clean 8-bit pixel art, minimalist, retro video game asset, clear outlines, Korean fairy tale theme. No Japanese or Chinese elements."
+    STYLE_DESCRIPTION = "Simple and clean 8-bit pixel art,dark background,focus on character,only upper body,like mug shot,only one person/object,wearing hanbok, minimalist, retro video game asset, clear outlines, Korean fairy tale theme. No Japanese or Chinese elements."
 
     # 에러 응답
     def _handle_error_response(self, message, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR):
@@ -568,7 +568,7 @@ class BaseImageView(AuthMixin) :
             raise Exception('AI 서비스 연결 실패: OpenAI 클라이언트 초기화 오류')
 
         gpt_prompt = f"""
-        You are an expert prompt writer for an 8-bit pixel art image generator. Your task is to convert a scene description into a single, visually detailed paragraph for the DALL-E model.
+        You are an expert prompt writer for an 8-bit pixel art image generator.background must be simple and dark. Your task is to convert a scene description into a single, visually detailed paragraph for the DALL-E model.
         
         **Consistent Rules (Apply to all images):**
         - **Relevant Characters:** {character_info}
