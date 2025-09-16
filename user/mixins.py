@@ -71,10 +71,10 @@ class UpdateMixin :
             instance.name = name
             updated_any_field = True
 
-        # is_display 필드 처리
-        is_display = request.data.get('is_display')
-        if is_display is not None:
-            instance.is_display = is_display
+        # is_active 필드 처리
+        is_active = request.data.get('is_active')
+        if is_active is not None:
+            instance.is_active = is_active
             updated_any_field = True
         
         # is_deleted 필드 처리
@@ -100,10 +100,10 @@ class UpdateAllMixin :
     def put(self, request, model) :
         update_fields = {}
 
-        # is_display 필드 처리
-        is_display = request.data.get('is_display')
-        if is_display is not None :
-            update_fields['is_display'] = is_display
+        # is_active 필드 처리
+        is_active = request.data.get('is_active')
+        if is_active is not None :
+            update_fields['is_active'] = is_active
         
         # is_deleted 필드 처리
         is_deleted = request.data.get('is_deleted')

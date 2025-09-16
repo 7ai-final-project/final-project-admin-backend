@@ -1,14 +1,10 @@
-# C:\Users\USER\Desktop\final\final-project-admin-backend\user\urls.py
-
 from django.urls import path
-from . import views  # user 앱의 views.py를 import 합니다.
+from user.views import UserListView, UserUpdateView, UserUpdateAllView, UserStorySessionListView, MultimodeSessionListView
 
 urlpatterns = [
-    # 사용자 목록 조회 (GET) / 사용자 추가 (POST)
-    # 최종 URL: /api/users/
-    path('users/', views.user_list_create, name='user-list-create'),
-
-    # 특정 사용자 조회 (GET), 수정 (PUT), 삭제 (DELETE)
-    # 최종 URL: /api/users/1/
-    path('users/<int:user_id>/', views.user_detail_update_delete, name='user-detail-update-delete'),
+    path('list', UserListView.as_view(), name='list_users'),
+    path('update/all', UserUpdateAllView.as_view(), name="update_all_users"),
+    path('update/<str:user_id>', UserUpdateView.as_view(), name="update_users"),
+    path('list/storymode/<str:user_id>', UserStorySessionListView.as_view(), name="list_users_storymode_infos"),
+    path('list/multimode/<str:user_id>', MultimodeSessionListView.as_view(), name="list_users_multimode_infos"),
 ]
