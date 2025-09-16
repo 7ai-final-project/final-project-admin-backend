@@ -48,7 +48,7 @@ class ListViewMixin :
     def get(self, request, model, serializer_class, list_name):
         try:
             # instances = model.objects.all()
-            instances = model.objects.filter(is_display=True, is_deleted=False)
+            instances = model.objects.filter(is_deleted=False)
             serializer = serializer_class(instances, many=True)
             return JsonResponse({
                 'message': f'{model.__name__} 목록 조회 성공',

@@ -494,7 +494,7 @@ class CharacterListView(AuthMixin) :
         try :
             character = Character.objects.filter(
                 scenario=scenario,
-                is_display=True,
+                # is_display=True,
                 is_deleted=False,
             )
         except Exception as e :
@@ -507,6 +507,11 @@ class CharacterListView(AuthMixin) :
             'message' : '캐릭터 조회 성공',
             'characters' : serializer.data
         }, status=status.HTTP_200_OK)
+
+# 캐릭터 DB 업데이트
+class CharacterUpdateView(AuthMixin, UpdateMixin) :
+    def put(self, request, character_id) :
+        return super().put(request, 'character_id', Character, CharacterSerializer, character_id)
 
 # 이미지 공통 로직 View
 class BaseImageView(AuthMixin) :

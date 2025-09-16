@@ -1,3 +1,4 @@
+import os
 import json
 import requests
 from openai import AzureOpenAI
@@ -340,8 +341,8 @@ class StoryCreateView(AuthMixin) :
 class StoryListView(AuthMixin) :
     def get(self, request) :
         try :
-            stories = Story.objects.filter(is_display=True, is_deleted=False).prefetch_related('moments__choices')
-            # stories = Story.objects.all().prefetch_related('moments__choices')
+            # stories = Story.objects.filter(is_display=True).prefetch_related('moments__choices')
+            stories = Story.objects.all().prefetch_related('moments__choices')
 
             story_list_data = []
             for story in stories :
@@ -375,8 +376,9 @@ class StoryListView(AuthMixin) :
                         'start_moment_title' : story.start_moment.title if story.start_moment else None,
                         'moments' : moments_data
                     }),
+                    'image_path' : story.image_path,
                     'is_display' : story.is_display,
-                    'is_deleted' : story.is_deleted
+                    'is_deleted' : story.is_deleted,
                 })
             
             return JsonResponse({
@@ -401,7 +403,6 @@ class StoryUpdateAllView(AuthMixin, UpdateAllMixin) :
 
 # 이미지 공통 로직 View
 class BaseImageView(AuthMixin) :
-    # CHARACTERS_INFO = "Haesik (a girl in traditional yellow and red Hanbok), Dalsik (her younger brother in white and gray Hanbok), and a large, slightly foolish Tiger. Or a woodcutter and a ghost from a well."
     STYLE_DESCRIPTION = "Simple and clean 8-bit pixel art, minimalist, retro video game asset, clear outlines, Korean fairy tale theme. No Japanese or Chinese elements."
 
     # 에러 응답
@@ -421,7 +422,6 @@ class BaseImageView(AuthMixin) :
         if not gpt_client :
             raise Exception('AI 서비스 연결 실패: OpenAI 클라이언트 초기화 오류')
 
-        # - **Relevant Characters:** {self.CHARACTERS_INFO}
         gpt_prompt = f"""
         You are an expert prompt writer for an 8-bit pixel art image generator. Your task is to convert a scene description into a single, visually detailed paragraph for the DALL-E model.
         **Consistent Rules (Apply to all images):**
@@ -501,6 +501,53 @@ class BaseImageView(AuthMixin) :
             raise Exception(f"DB 업데이트 실패 (Moment ID: {moment_id}): {e}")
 
 
+# 이미지 업로드
+class StoryImageUploadView(BaseImageView) :
+    def post(self, request) :
+        file = request.FILES.get('file')
+        story_id = request.data.get('story_id')
+        story_title = request.data.get('story_title')
+
+        if not file :
+            return JsonResponse({
+                'message' : '파일이 없습니다.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        container_name = story_title.lower().replace(' ', '-')
+        
+        _, file_extension = os.path.splitext(file.name)
+        blob_name = f'{container_name}-thumbnail{file_extension}'
+
+        # Azure Blob Storage 파일 업로드
+        try :
+            blob_util = AzureBlobStorageUtil(AppSettings.AZURE_BLOB_STORAGE_CONNECT_KEY_FOR_IMAGE)
+            container_client = blob_util.get_or_create_container(container_name, public=True)
+            
+            file_url = blob_util.upload_blob(
+                container_client=container_client,
+                blob_name=blob_name,
+                data=file.read(),
+                content_type=file.content_type,
+                overwrite=True
+            )
+        except Exception as e :
+            return self._handle_error_response(str(e))
+        
+        # DB 저장
+        try :
+            story = Story.objects.get(id=story_id)
+            story.image_path = file_url
+            story.save()
+
+            return JsonResponse({
+                'message': '이미지 업로드 완료',
+                'image_url': file_url,
+                'blob_name': blob_name,
+            }, status=status.HTTP_200_OK)
+        except Exception as e :
+            raise Exception(f"DB 업데이트 실패: {e}")
+        
+
 # 이미지 생성
 class MomentImageCreateView(BaseImageView) :
     def put(self, request, moment_id) :
@@ -542,72 +589,3 @@ class MomentImageCreateView(BaseImageView) :
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return self._handle_error_response(str(e))
-    
-# 이미지 일괄 생성
-# class MomentImageCreateAllView(BaseImageView) : 
-#     def put(self, request) :
-#         story_id = request.data.get('story_id')
-#         story_title = request.data.get('story_title')
-#         moments_data = request.data.get('moments')
-
-#         if not all([story_id, story_title, moments_data]):
-#             return JsonResponse({
-#                 "error": "필수 요청 파라미터(story_id, story_title, moments)가 누락되었습니다."
-#             }, status=status.HTTP_400_BAD_REQUEST)
-
-#         container_name = story_title.lower()
-#         image_results = []
-
-#         try:
-#             blob_util = AzureBlobStorageUtil(AppSettings.AZURE_BLOB_STORAGE_CONNECT_KEY_FOR_IMAGE)
-#             container_client = blob_util.get_or_create_container(container_name)
-#             blob_client = container_client.get_blob_client(blob=blob_name)
-#         except Exception as e:
-#             return self._handle_error_response(str(e))
-        
-#         for moment_id, moment_details in moments_data.items():
-#             moment_title = moment_details.get('title')
-#             moment_description = moment_details.get('description')
-            
-#             if not all([moment_id, moment_title, moment_description]):
-#                 print(f"WARNING: Moment ID {moment_id}: 필수 데이터(title, description)가 누락되었습니다. 건너뜁니다.")
-#                 continue
-
-#             blob_name = f'{moment_title.lower().replace(" ", "-")}.png'
-
-#             try:
-#                 existing_image_url = blob_util.check_blob_exists_and_get_url(blob_client)
-#                 if existing_image_url:
-#                     self._update_moment_image_path(moment_id, existing_image_url)
-#                     image_results.append({
-#                         'moment_id': moment_id,
-#                         'image_url': existing_image_url,
-#                         'status': 'existing'
-#                     })
-#                     continue
-            
-#                 dalle_prompt = self._generate_gpt_prompt(moment_description, moment_id)
-#                 temp_image_url = self._generate_dalle_image(dalle_prompt, moment_id)
-#                 final_image_url = self._upload_image_to_blob(blob_client, temp_image_url, moment_id)
-#                 self._update_moment_image_path(moment_id, final_image_url)
-
-#                 image_results.append({
-#                     'moment_id': moment_id,
-#                     'image_url': final_image_url,
-#                     'status': 'created'
-#                 })
-#             except Exception as e:
-#                 print(f"ERROR: Moment ID {moment_id} 이미지 처리 중 오류 발생: {e}. 다음 Moment로 진행합니다.")
-#                 image_results.append({
-#                     'moment_id': moment_id,
-#                     'image_url': None,
-#                     'status': 'failed',
-#                     'error': str(e)
-#                 })
-#                 continue
-
-#         return JsonResponse({
-#             'message': '이미지 일괄 생성 및 업로드 처리 완료',
-#             'story_id': story_id,
-#             'image_results': image_results
-#         }, status=status.HTTP_200_OK)
