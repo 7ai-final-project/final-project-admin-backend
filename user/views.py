@@ -6,7 +6,7 @@ from user.models import User
 from user.serializers import UserSerializer
 from user.mixins import AuthMixin, ListViewMixin, UpdateMixin, UpdateAllMixin
 from storymode.models import StorymodeSession
-from game.models import GameRoomSelectScenario, MultimodeSession
+from game.models import GameRoomSelectScenario, SinglemodeSession, MultimodeSession
 
 
 # 사용자 DB 조회
@@ -83,83 +83,142 @@ class UserStorySessionListView(AuthMixin) :
             return JsonResponse({
                 'message': f'스토리 세션 정보를 불러오는 중 오류가 발생했습니다: {e}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-# 사용자 멀티모드 세션 정보 조회
-class MultimodeSessionListView(AuthMixin) :
+
+# 싱글/멀티모드 게임 세션 공통 로직 View
+class BaseGameView(AuthMixin) :
+    def _serialize_user_data(self, user) :
+        return {
+            'id': str(user.id),
+            'name': user.name,
+        }
+
+    def _serialize_scenario_data(self, scenario) :
+        return {
+            'id': str(scenario.id),
+            'title': scenario.title,
+            'description': scenario.description,
+            'image_path': scenario.image_path if scenario.image_path else None,
+        }
+
+    def _serialize_character_data(self, character) :
+        if not character :
+            return None
+        return {
+            'id': str(character.id),
+            'name': character.name,
+            'role': character.role,
+            'description': character.description,
+            'image_path': character.image_path if character.image_path else None,
+            'items': character.items,
+            'ability': character.ability,
+        }
+
+    def _serialize_optional_object(self, obj) :
+        if not obj :
+            return None
+        return {
+            'id': str(obj.id),
+            'name': obj.name,
+        }
+
+    def _serialize_common_session_fields(self, session):
+        return {
+            'id': str(session.id),
+            'user': self._serialize_user_data(session.user),
+            'scenario': self._serialize_scenario_data(session.scenario),
+            'genre': None,
+            'difficulty': None,
+            'mode': None, 
+            'character': self._serialize_character_data(session.character),
+            'choice_history': session.choice_history,
+            'character_history': session.character_history,
+            'started_at': session.started_at.isoformat(),
+            'ended_at': session.ended_at.isoformat() if session.ended_at else None,
+            'status': session.status,
+        }
+
+    # 싱글모드 세션 데이터 직렬화
+    def _serialize_session_data(self, session) :
+        common_data = self._serialize_common_session_fields(session)
+        common_data.update({
+            'genre': self._serialize_optional_object(session.genre),
+            'difficulty': self._serialize_optional_object(session.difficulty),
+            'mode': self._serialize_optional_object(session.mode),
+        })
+        return common_data
+
+    # 멀티모드 세션 데이터 직렬화
+    def _serialize_multimode_session_data(self, session) :
+        common_data = self._serialize_common_session_fields(session)
+
+        genre_data = None
+        difficulty_data = None
+        mode_data = None
+
+        try:
+            selected_scenario_info = GameRoomSelectScenario.objects.select_related(
+                'genre', 'difficulty', 'mode'
+            ).get(gameroom=session.gameroom, scenario=session.scenario)
+
+            genre_data = self._serialize_optional_object(selected_scenario_info.genre)
+            difficulty_data = self._serialize_optional_object(selected_scenario_info.difficulty)
+            mode_data = self._serialize_optional_object(selected_scenario_info.mode)
+
+        except ObjectDoesNotExist:
+            pass
+
+        common_data.update({
+            'gameroom': {
+                'id': str(session.gameroom.id),
+                'name': session.gameroom.name,
+                'description': session.gameroom.description,
+                'status': session.gameroom.status,
+                'room_type': session.gameroom.room_type,
+                'owner_id': str(session.gameroom.owner.id),
+                'max_players': session.gameroom.max_players,
+            },
+            'genre': genre_data,
+            'difficulty': difficulty_data,
+            'mode': mode_data,
+        })
+
+        return common_data
+
+# 사용자 싱글모드 세션 정보 조회
+class SinglemodeSessionListView(BaseGameView) :
     def get(self, request, user_id) :
-        try :
+        try:
+            user = get_object_or_404(User, id=user_id)
+
+            sessions = SinglemodeSession.objects.filter(user=user).select_related(
+                'user', 'scenario', 'character', 'genre', 'difficulty', 'mode'
+            ).order_by('-started_at')
+
+            sessions_data = [self._serialize_session_data(session) for session in sessions]
+
+            return JsonResponse({
+                'message': '싱글모드 세션 정보 조회 성공',
+                'singleSessions': sessions_data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return JsonResponse({
+                'message': f'싱글모드 세션 정보를 불러오는 중 오류가 발생했습니다: {e}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# 사용자 멀티모드 세션 정보 조회
+class MultimodeSessionListView(BaseGameView) :
+    def get(self, request, user_id) :
+        try:
             user = get_object_or_404(User, id=user_id)
 
             sessions = MultimodeSession.objects.filter(user=user).select_related(
                 'user', 'gameroom', 'scenario', 'character'
             ).order_by('-started_at')
 
-            sessions_data = []
-            for session in sessions:
-                selected_scenario_info = None
-                try:
-                    selected_scenario_info = GameRoomSelectScenario.objects.select_related(
-                        'genre', 'difficulty', 'mode'
-                    ).get(gameroom=session.gameroom, scenario=session.scenario)
-                except ObjectDoesNotExist:
-                    pass
-
-                session_detail_data = {
-                    'id': str(session.id),
-                    'user': {
-                        'id': str(session.user.id),
-                        'name': session.user.name,
-                    },
-                    'gameroom': {
-                        'id': str(session.gameroom.id),
-                        'name': session.gameroom.name,
-                        'description': session.gameroom.description,
-                        'status': session.gameroom.status,
-                        'room_type': session.gameroom.room_type,
-                        'owner_id': str(session.gameroom.owner.id),
-                        'max_players': session.gameroom.max_players,
-                    },
-                    'scenario': {
-                        'id': str(session.scenario.id),
-                        'title': session.scenario.title,
-                        'description': session.scenario.description,
-                        'image_path': session.scenario.image_path,
-                    },
-                    'genre': {
-                        'id': str(selected_scenario_info.genre.id),
-                        'name': selected_scenario_info.genre.name,
-                    }
-                    if selected_scenario_info and selected_scenario_info.genre else None,
-                    'difficulty': {
-                        'id': str(selected_scenario_info.difficulty.id),
-                        'name': selected_scenario_info.difficulty.name,
-                    }
-                    if selected_scenario_info and selected_scenario_info.difficulty else None,
-                    'mode': {
-                        'id': str(selected_scenario_info.mode.id),
-                        'name': selected_scenario_info.mode.name,
-                    }
-                    if selected_scenario_info and selected_scenario_info.mode else None,
-                    'character': {
-                        'id': str(session.character.id),
-                        'name': session.character.name,
-                        'role': session.character.role,
-                        'description': session.character.description,
-                        'image_path': session.character.image_path,
-                        'items': session.character.items,
-                        'ability': session.character.ability,
-                    }
-                    if session.character else None,
-                    'choice_history': session.choice_history,
-                    'character_history': session.character_history,
-                    'started_at': session.started_at.isoformat(),
-                    'ended_at': session.ended_at.isoformat() if session.ended_at else None,
-                    'status': session.status,
-                }
-                sessions_data.append(session_detail_data)
+            sessions_data = [self._serialize_multimode_session_data(session) for session in sessions]
 
             return JsonResponse({
-                'message' : '멀티모드 세션 정보 조회 성공',
+                'message': '멀티모드 세션 정보 조회 성공',
                 'multiSessions': sessions_data
             }, status=status.HTTP_200_OK)
         except Exception as e:
