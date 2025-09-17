@@ -1,5 +1,5 @@
 from django.urls import path
-from storymode.views import StoryFileUploadView, StoryCreateView, StoryListView, StoryUpdateAllView, StoryUpdateView, StoryImageUploadView, MomentImageCreateView
+from storymode.views import StoryFileUploadView, StoryCreateView, StoryListView, StoryUpdateAllView, StoryUpdateView, StoryImageUploadView, MomentImageCreateView, MomentImageDeleteView, StorymodeStatisticsView
 
 urlpatterns = [
     path('upload/stories', StoryFileUploadView.as_view(), name="upload_story"),
@@ -9,4 +9,6 @@ urlpatterns = [
     path('update/stories/<str:story_id>', StoryUpdateView.as_view(), name="update_story"),
     path('update/stories/images/thumbnail', StoryImageUploadView.as_view(), name="update_story_thumbnail"),
     path('create/stories/images/<str:moment_id>', MomentImageCreateView.as_view(), name="create_story_image"),
+    path('delete/stories/images/<str:moment_id>', MomentImageDeleteView.as_view(), name="delete_story_image"),
+    path('list/statistics', StorymodeStatisticsView.as_view(), name="list_story_statistics"),
 ]
