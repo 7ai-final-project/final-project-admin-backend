@@ -1,13 +1,16 @@
+import time
 import json
 import requests
+import urllib.parse
 from openai import AzureOpenAI
 from rest_framework import status
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.db.models import Count
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from azure.core.exceptions import ResourceNotFoundError
-from game.models import Genre, Mode, Difficulty, Scenario, Character
+from game.models import Genre, Mode, Difficulty, Scenario, Character, GameRoomSelectScenario, SinglemodeSession, MultimodeSession
 from game.serializers import GenreSerializer, ModeSerializer, DifficultySerializer, ScenarioSerializer, CharacterSerializer
 from game.mixins import AuthMixin, CreateMixin, ListViewMixin, UpdateMixin, UpdateAllMixin
 
@@ -656,9 +659,9 @@ class CharacterImageCreateView(BaseImageView) :
         character_role = request.data.get('character_role')
         character_description = request.data.get('character_description')
 
-        if not character_id :
+        if not all([character_id, scenario_title, character_name, character_role, character_description]):
             return JsonResponse({
-                "error": "character_id 가 누락되었습니다."
+                "error": "필수 요청 파라미터(character_id, scenario_title, character_name, character_role, character_description)가 누락되었습니다."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         container_name = scenario_title.lower().replace(' ', '-')
@@ -670,9 +673,11 @@ class CharacterImageCreateView(BaseImageView) :
             blob_client = container_client.get_blob_client(blob=blob_name)
             
             existing_image_url = blob_util.check_blob_exists_and_get_url(blob_client)
-            print('existing_image_url', existing_image_url)
             if existing_image_url:
-                self._update_character_image_path(character_id, existing_image_url)
+                # 타임스탬프를 붙여서 캐시 무효화
+                timestamp = int(time.time())
+                existing_image_url_with_timestamp = f'{existing_image_url}?t={timestamp}'
+                self._update_character_image_path(character_id, existing_image_url_with_timestamp)
                 return JsonResponse({
                     'message': '이미지 생성 완료 (기존 이미지 사용)',
                     'character_id': character_id,
@@ -683,7 +688,11 @@ class CharacterImageCreateView(BaseImageView) :
             dalle_prompt = self._generate_gpt_prompt(generated_character_info)
             temp_image_url = self._generate_dalle_image(dalle_prompt, character_id)
             final_image_url = self._upload_image_to_blob(blob_client, temp_image_url, character_id)
-            self._update_character_image_path(character_id, final_image_url)
+
+            # 타임스탬프를 붙여서 캐시 무효화
+            timestamp = int(time.time())
+            final_image_url_with_timestamp  = f'{final_image_url}?t={timestamp}'
+            self._update_character_image_path(character_id, final_image_url_with_timestamp)
 
             return JsonResponse({
                 'message': '이미지 개별 생성 및 업로드 완료',
@@ -692,3 +701,155 @@ class CharacterImageCreateView(BaseImageView) :
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return self._handle_error_response(str(e))
+
+# 이미지 삭제
+class CharacterImageDeleteView(BaseImageView) :
+    def delete(self, request, character_id) :
+        if not character_id :
+            return JsonResponse({
+                "error": "필수 요청 파라미터 character_id 가 누락되었습니다."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try :
+            character = Character.objects.get(id=character_id)
+            
+            # image_path가 없는 경우 즉시 성공 응답
+            if not character.image_path:
+                return JsonResponse({
+                    'message': '해당 Character 삭제할 이미지가 없습니다.',
+                    'character_id': character_id,
+                }, status=status.HTTP_200_OK)
+
+            # URL 디코딩 및 쿼리 스트링 제거
+            image_url = character.image_path
+            parsed_url = urllib.parse.urlparse(image_url)
+            path_parts = parsed_url.path[1:].split('/', 1) 
+
+            if len(path_parts) < 2:
+                raise Exception(f"유효하지 않은 이미지 URL 형식 (컨테이너 또는 Blob 이름 누락): {image_url}")
+
+            container_name = path_parts[0]
+            blob_name = path_parts[1]
+
+            blob_util = AzureBlobStorageUtil(AppSettings.AZURE_BLOB_STORAGE_CONNECT_KEY_FOR_IMAGE)
+            container_client = blob_util.get_or_create_container(container_name, public=True)
+            blob_client = container_client.get_blob_client(blob=blob_name)
+            
+            # Azure Blob Storage에서 이미지 삭제 시도
+            try:
+                if blob_client.exists():
+                    blob_client.delete_blob()
+                    print(f"Azure Blob Storage에서 이미지 삭제 완료: {blob_name}")
+                else:
+                    print(f"Azure Blob Storage에 이미지가 존재하지 않아 삭제를 건너뛰었습니다: {blob_name}")
+            except ResourceNotFoundError:
+                print(f"Azure Blob Storage에서 Blob '{blob_name}'을(를) 찾을 수 없어 삭제를 건너뛰었습니다.")
+            except Exception as blob_delete_e:
+                print(f"Azure Blob Storage 이미지 삭제 실패 (Blob: {blob_name}): {blob_delete_e}")
+                return self._handle_error_response(
+                    f"Azure Blob Storage 이미지 삭제 실패: {blob_delete_e}",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            # Blob 삭제가 성공했거나, Blob이 없었을 경우에만 DB 업데이트 진행
+            character.image_path = None
+            character.save()
+            print(f"DB에서 Character ID {character_id}의 image_path 삭제 완료")
+
+            return JsonResponse({
+                'message': '이미지 삭제 및 DB 업데이트 완료',
+                'character_id': character_id,
+            }, status=status.HTTP_200_OK)
+        except Character.DoesNotExist:
+            return self._handle_error_response(
+                f"Moment ID {character_id}를 찾을 수 없습니다.",
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            # 기타 예외 (URL 파싱 오류 등) 발생 시
+            print(f"이미지 삭제 중 오류 발생: {e}")
+            return self._handle_error_response(str(e))
+        
+# 싱글/멀티모드 게임 통계
+class GameStatisticsView(AuthMixin):
+    def get(self, request):
+        try:
+            # 싱글모드에서 가장 많이 선택된 시나리오
+            most_selected_scenario_single = SinglemodeSession.objects.filter(
+                scenario__is_deleted=False, 
+                scenario__is_display=True
+            ).values('scenario__title').annotate(count=Count('scenario')).order_by('-count').first()
+            scenario_name_single = most_selected_scenario_single['scenario__title'] if most_selected_scenario_single else None
+
+            # 싱글모드에서 가장 많이 선택된 장르
+            most_selected_genre_single = SinglemodeSession.objects.filter(
+                genre__is_deleted=False, 
+                genre__is_display=True
+            ).values('genre__name').annotate(count=Count('genre')).order_by('-count').first()
+            genre_name_single = most_selected_genre_single['genre__name'] if most_selected_genre_single else None
+
+            # 싱글모드에서 가장 많이 선택된 난이도
+            most_selected_difficulty_single = SinglemodeSession.objects.filter(
+                difficulty__is_deleted=False, 
+                difficulty__is_display=True
+            ).values('difficulty__name').annotate(count=Count('difficulty')).order_by('-count').first()
+            difficulty_name_single = most_selected_difficulty_single['difficulty__name'] if most_selected_difficulty_single else None
+
+            # 싱글모드에서 가장 많이 선택된 캐릭터
+            most_selected_character_single = SinglemodeSession.objects.filter(
+                character__is_deleted=False, 
+                character__is_display=True
+            ).values('character__name').annotate(count=Count('character')).order_by('-count').first()
+            character_name_single = most_selected_character_single['character__name'] if most_selected_character_single else None
+
+            # 멀티모드에서 가장 많이 선택된 시나리오
+            most_selected_scenario_multi = GameRoomSelectScenario.objects.filter(
+                scenario__is_deleted=False, 
+                scenario__is_display=True
+            ).values('scenario__title').annotate(count=Count('scenario')).order_by('-count').first()
+            scenario_name_multi = most_selected_scenario_multi['scenario__title'] if most_selected_scenario_multi else None
+
+            # 멀티모드에서 가장 많이 선택된 장르
+            most_selected_genre_multi = GameRoomSelectScenario.objects.filter(
+                genre__is_deleted=False, 
+                genre__is_display=True
+            ).values('genre__name').annotate(count=Count('genre')).order_by('-count').first()
+            genre_name_multi = most_selected_genre_multi['genre__name'] if most_selected_genre_multi else None
+
+            # 멀티모드에서 가장 많이 선택된 난이도
+            most_selected_difficulty_multi = GameRoomSelectScenario.objects.filter(
+                difficulty__is_deleted=False, 
+                difficulty__is_display=True
+            ).values('difficulty__name').annotate(count=Count('difficulty')).order_by('-count').first()
+            difficulty_name_multi = most_selected_difficulty_multi['difficulty__name'] if most_selected_difficulty_multi else None
+
+            # 멀티모드에서 가장 많이 선택된 캐릭터
+            most_selected_character_multi = MultimodeSession.objects.filter(
+                character__is_deleted=False, 
+                character__is_display=True
+            ).values('character__name').annotate(count=Count('character')).order_by('-count').first()
+            character_name_multi = most_selected_character_multi['character__name'] if most_selected_character_multi else None
+
+            data = {
+                'multimode_statistics': {
+                    'most_selected_scenario': scenario_name_multi,
+                    'most_selected_genre': genre_name_multi,
+                    'most_selected_difficulty': difficulty_name_multi,
+                    'most_selected_character': character_name_multi,
+                },
+                'singlemode_statistics': {
+                    'most_selected_scenario': scenario_name_single,
+                    'most_selected_genre': genre_name_single,
+                    'most_selected_difficulty': difficulty_name_single,
+                    'most_selected_character': character_name_single,
+                }
+            }
+
+            return JsonResponse({
+                'message': '통계 정보 조회 완료',
+                'most_selected_data': data,
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return JsonResponse({
+                'message' : 'DB 조회 실패',
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -7,6 +7,7 @@ class User(models.Model) :
     id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
     email = models.EmailField(max_length=255, unique=True)
     name = models.CharField(max_length=50)
+    nickname = models.CharField(max_length=50, null=True, blank=True)
     last_login = models.DateTimeField(auto_now=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     social_id = models.CharField(max_length=255)

@@ -1,10 +1,13 @@
 import os
+import time
 import json
 import requests
+import urllib.parse
 from openai import AzureOpenAI
 from rest_framework import status
 from django.conf import settings
 from django.http import JsonResponse
+from django.db.models import Count
 from azure.storage.blob import BlobServiceClient, ContentSettings
 from azure.core.exceptions import ResourceNotFoundError
 from storymode.models import Story, StorymodeMoment, StorymodeChoice
@@ -113,7 +116,6 @@ class AzureBlobStorageUtil :
         except Exception as e :
             raise Exception(f"ERROR: Blob 다운로드 실패 ({blob_name}): {e}")
         
-    
 # 전달되는 스토리 파일을 Azure Blob Storage 에 업로드
 class StoryFileUploadView(AuthMixin) :
     def post(self, request) :
@@ -346,24 +348,35 @@ class StoryListView(AuthMixin) :
 
             story_list_data = []
             for story in stories :
-                moments_data = {}
+                moments_dict = {}
                 for moment in story.moments.all() :
                     choices_data = []
                     for choice in moment.choices.all() :
-                        # 선택지 정보
                         choices_data.append({
                             'action_type' : choice.action_type,
                             'next_moment_id' : str(choice.next_moment.id) if choice.next_moment else None
                         })
                     
                     # 분기점 정보
-                    moments_data[str(moment.id)] = {
+                    moments_dict[str(moment.id)] = {
                         'title' : moment.title,
                         'description' : moment.description,
                         'choices_data' : choices_data,
                         'image_path' : moment.image_path
                     }
                 
+                # moments_data를 순서가 있는 OrderedDict로 만들기
+                ordered_moments_data = {}
+                start_moment_id_str = str(story.start_moment.id) if story.start_moment else None
+                if start_moment_id_str and start_moment_id_str in moments_dict:
+                    # 시작 모멘트가 있다면 가장 먼저 추가
+                    ordered_moments_data[start_moment_id_str] = moments_dict[start_moment_id_str]
+                    # 시작 모멘트는 이미 추가했으므로 딕셔너리에서 제거
+                    del moments_dict[start_moment_id_str]
+                
+                ordered_moments_data.update(moments_dict)
+
+
                 # 스토리 정보
                 story_list_data.append({
                     'id' : str(story.id),
@@ -372,9 +385,9 @@ class StoryListView(AuthMixin) :
                     'description' : story.description,
                     'description_eng' : story.description_eng,
                     'content' : json.dumps({
-                        'start_moment_id' : str(story.start_moment.id) if story.start_moment else None,
+                        'start_moment_id' : start_moment_id_str,
                         'start_moment_title' : story.start_moment.title if story.start_moment else None,
-                        'moments' : moments_data
+                        'moments' : ordered_moments_data
                     }),
                     'image_path' : story.image_path,
                     'is_display' : story.is_display,
@@ -426,10 +439,15 @@ class BaseImageView(AuthMixin) :
         You are an expert prompt writer for an 8-bit pixel art image generator. Your task is to convert a scene description into a single, visually detailed paragraph for the DALL-E model.
         **Consistent Rules (Apply to all images):**
         - **Art Style:** {self.STYLE_DESCRIPTION}
+        - Avoid extreme or frightening language (e.g., sinister, menacing, tragic, chaos).
+        - Keep the description adventurous, mysterious, or tense, but not violent or horrific.
+        - Expressions can show worry, caution, or tension, but do not emphasize gore, blood, or graphic horror.
+        - The final tone should feel like a retro video game cutscene, safe for all audiences.
         **Current Scene Description to Convert:**
         - "{moment_description}"
         Combine all of this information into a single descriptive paragraph. Focus on visual details like character actions, expressions, and background elements. Do not use markdown or lists.
         """
+
         try :
             gpt_response = gpt_client.chat.completions.create(
                 model=AppSettings.AZURE_OPENAI_DEPLOYMENT,
@@ -450,13 +468,11 @@ class BaseImageView(AuthMixin) :
             AppSettings.AZURE_OPENAI_DALLE_ENDPOINT,
             AppSettings.AZURE_OPENAI_DALLE_VERSION
         )
-        print('dalle_client', dalle_client)
 
         if not dalle_client :
             raise Exception('AI 서비스 연결 실패: DALL-E 클라이언트 초기화 오류')
 
         try :
-            print('여기')
             dalle_response = dalle_client.images.generate(
                 model=AppSettings.AZURE_OPENAI_DALLE_DEPLOYMENT,
                 prompt=dalle_prompt,
@@ -465,9 +481,7 @@ class BaseImageView(AuthMixin) :
                 style="vivid",
                 quality="standard"
             )
-            print('dalle_response', dalle_response)
             temp_image_url = dalle_response.data[0].url if dalle_response.data else None
-            print('temp_image_url', temp_image_url)
             if not temp_image_url :
                 raise Exception("DALL-E 3 이미지 생성 실패: 이미지 URL을 가져올 수 없습니다.")
             return temp_image_url
@@ -499,7 +513,6 @@ class BaseImageView(AuthMixin) :
             moment.save()
         except Exception as e :
             raise Exception(f"DB 업데이트 실패 (Moment ID: {moment_id}): {e}")
-
 
 # 이미지 업로드
 class StoryImageUploadView(BaseImageView) :
@@ -546,7 +559,6 @@ class StoryImageUploadView(BaseImageView) :
             }, status=status.HTTP_200_OK)
         except Exception as e :
             raise Exception(f"DB 업데이트 실패: {e}")
-        
 
 # 이미지 생성
 class MomentImageCreateView(BaseImageView) :
@@ -570,22 +582,122 @@ class MomentImageCreateView(BaseImageView) :
             
             existing_image_url = blob_util.check_blob_exists_and_get_url(blob_client)
             if existing_image_url:
-                self._update_moment_image_path(moment_id, existing_image_url)
+                # 타임스탬프를 붙여서 캐시 무효화
+                timestamp = int(time.time())
+                existing_image_url_with_timestamp = f'{existing_image_url}?t={timestamp}'
+                self._update_moment_image_path(moment_id, existing_image_url_with_timestamp)
                 return JsonResponse({
                     'message': '이미지 생성 완료 (기존 이미지 사용)',
                     'moment_id': moment_id,
-                    'image_url': existing_image_url,
+                    'image_url': existing_image_url_with_timestamp,
                 }, status=status.HTTP_200_OK)
             
             dalle_prompt = self._generate_gpt_prompt(moment_description, moment_id)
             temp_image_url = self._generate_dalle_image(dalle_prompt, moment_id)
             final_image_url = self._upload_image_to_blob(blob_client, temp_image_url, moment_id)
-            self._update_moment_image_path(moment_id, final_image_url)
+
+            # 타임스탬프를 붙여서 캐시 무효화
+            timestamp = int(time.time())
+            final_image_url_with_timestamp  = f'{final_image_url}?t={timestamp}'
+            self._update_moment_image_path(moment_id, final_image_url_with_timestamp)
 
             return JsonResponse({
                 'message': '이미지 개별 생성 및 업로드 완료',
                 'moment_id': moment_id,
-                'image_url': final_image_url,
+                'image_url': final_image_url_with_timestamp,
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return self._handle_error_response(str(e))
+
+# 이미지 삭제
+class MomentImageDeleteView(BaseImageView) :
+    def delete(self, request, moment_id) :
+        if not moment_id :
+            return JsonResponse({
+                "error": "필수 요청 파라미터 moment_id 가 누락되었습니다."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try :
+            moment = StorymodeMoment.objects.get(id=moment_id)
+            
+            # image_path가 없는 경우 즉시 성공 응답
+            if not moment.image_path:
+                return JsonResponse({
+                    'message': '해당 Moment에 삭제할 이미지가 없습니다.',
+                    'moment_id': moment_id,
+                }, status=status.HTTP_200_OK)
+
+            # URL 디코딩 및 쿼리 스트링 제거
+            image_url = moment.image_path
+            parsed_url = urllib.parse.urlparse(image_url)
+            path_parts = parsed_url.path[1:].split('/', 1) 
+
+            if len(path_parts) < 2:
+                raise Exception(f"유효하지 않은 이미지 URL 형식 (컨테이너 또는 Blob 이름 누락): {image_url}")
+
+            container_name = path_parts[0]
+            blob_name = path_parts[1]
+
+            blob_util = AzureBlobStorageUtil(AppSettings.AZURE_BLOB_STORAGE_CONNECT_KEY_FOR_IMAGE)
+            container_client = blob_util.get_or_create_container(container_name, public=True)
+            blob_client = container_client.get_blob_client(blob=blob_name)
+            
+            # Azure Blob Storage에서 이미지 삭제 시도
+            try:
+                if blob_client.exists():
+                    blob_client.delete_blob()
+                    print(f"Azure Blob Storage에서 이미지 삭제 완료: {blob_name}")
+                else:
+                    print(f"Azure Blob Storage에 이미지가 존재하지 않아 삭제를 건너뛰었습니다: {blob_name}")
+            except ResourceNotFoundError:
+                print(f"Azure Blob Storage에서 Blob '{blob_name}'을(를) 찾을 수 없어 삭제를 건너뛰었습니다.")
+            except Exception as blob_delete_e:
+                print(f"Azure Blob Storage 이미지 삭제 실패 (Blob: {blob_name}): {blob_delete_e}")
+                return self._handle_error_response(
+                    f"Azure Blob Storage 이미지 삭제 실패: {blob_delete_e}",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            # Blob 삭제가 성공했거나, Blob이 없었을 경우에만 DB 업데이트 진행
+            moment.image_path = None
+            moment.save()
+            print(f"DB에서 Moment ID {moment_id}의 image_path 삭제 완료")
+
+            return JsonResponse({
+                'message': '이미지 삭제 및 DB 업데이트 완료',
+                'moment_id': moment_id,
+            }, status=status.HTTP_200_OK)
+        except StorymodeMoment.DoesNotExist:
+            return self._handle_error_response(
+                f"Moment ID {moment_id}를 찾을 수 없습니다.",
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            # 기타 예외 (URL 파싱 오류 등) 발생 시
+            print(f"이미지 삭제 중 오류 발생: {e}")
+            return self._handle_error_response(str(e))
+
+# 스토리모드 통계
+class StorymodeStatisticsView(AuthMixin):
+    def get(self, request):
+        try:
+            # 가장 많이 선택된 스토리
+            most_selected_story = Story.objects.annotate(
+                selection_count=Count('story_storymode_session')
+            ).filter(
+                is_deleted=False, 
+                is_display=True,
+                selection_count__gt=0
+            ).order_by('-selection_count').values('title').first()
+            story_name = most_selected_story['title'] if most_selected_story else None
+
+            return JsonResponse({
+                'message': '통계 정보 조회 완료',
+                'most_selected_data': {
+                    'most_selected_story': story_name,
+                },
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return JsonResponse({
+                'message' : f'DB 조회 실패: {e}',
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
