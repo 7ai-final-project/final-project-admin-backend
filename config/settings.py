@@ -145,17 +145,17 @@ DATABASES = {
         'HOST' : DATABASE_HOST,
         'PORT' : DATABASE_PORT,
     },
-    'test': {
+    'prod': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME' : 'project_test',
+        'NAME' : 'project',
         'USER' : DATABASE_USER,
         'PASSWORD' : DATABASE_PASSWORD,
         'HOST' : DATABASE_HOST,
         'PORT' : DATABASE_PORT,
-    }
+    },
 }
 
-DATABASE_ROUTERS = ['config.db_routers.TestDBRouter']
+DATABASE_ROUTERS = ['config.db_routers.ProdDBRouter']
 
 
 # Password validation
