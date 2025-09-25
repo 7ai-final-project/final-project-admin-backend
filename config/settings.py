@@ -55,7 +55,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     'accounts',
-    'chat',
     'game',
     'storymode',
     'user',
