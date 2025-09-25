@@ -1,7 +1,7 @@
 class TestDBRouter :
     # project_test 에서 사용하는 앱
     route_app_labels = {
-        'chat', 'game', 'storymode', 'user',
+        'game', 'storymode', 'user',
     }
 
     def db_for_read(self, model, **hints) :
@@ -27,7 +27,7 @@ class TestDBRouter :
 class ProdDBRouter :
     # project 에서 사용하는 앱
     route_app_labels = {
-        'chat', 'game', 'storymode', 'user',
+        'game', 'storymode', 'user',
     }
 
     def db_for_read(self, model, **hints) :
